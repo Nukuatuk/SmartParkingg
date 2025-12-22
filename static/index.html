@@ -1,0 +1,74 @@
+<script>
+const form = document.getElementById("form");
+const imageInput = document.getElementById("imageInput");
+const previewDiv = document.getElementById("preview");
+const resultDiv = document.getElementById("result");
+const statusDiv = document.getElementById("status");
+const errorDiv = document.getElementById("error");
+
+imageInput.addEventListener("change", () => {
+    previewDiv.innerHTML = "";
+    const file = imageInput.files[0];
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+    previewDiv.innerHTML = `
+        <p style="font-size:14px;">Предпросмотр изображения:</p>
+        <img src="${url}" width="600">
+    `;
+});
+
+form.onsubmit = async (e) => {
+    e.preventDefault();
+
+    statusDiv.textContent = "⏳ Анализ...";
+    errorDiv.textContent = "";
+    resultDiv.innerHTML = "";
+
+    const fd = new FormData(form);
+
+    const resp = await fetch("/infer", {
+        method: "POST",
+        body: fd
+    });
+
+    if (!resp.ok) {
+        let t = await resp.json().catch(() => ({}));
+        errorDiv.textContent = "Ошибка: " + (t.error || "Неизвестная ошибка");
+        statusDiv.textContent = "";
+        return;
+    }
+
+    const data = await resp.json();
+    statusDiv.textContent = "Готово ✔";
+
+    resultDiv.innerHTML = `
+        <h4>Статистика парковки</h4>
+
+        <div style="
+            background:#f9fafb;
+            padding:15px;
+            border-radius:10px;
+            margin-bottom:10px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.05);
+            max-width:400px;
+        ">
+            <p><b>Всего мест:</b> ${data.total}</p>
+            <p style="color:#dc2626;"><b>Занято:</b> ${data.occupied}</p>
+            <p style="color:#16a34a;"><b>Свободно:</b> ${data.free}</p>
+            <p><b>Процент занятости:</b> ${data.percent}%</p>
+        </div>
+
+        <h4>Результат обработки:</h4>
+        <img src="${data.image_url}" width="800">
+    `;
+};
+
+function clearResult() {
+    previewDiv.innerHTML = "";
+    resultDiv.innerHTML = "";
+    errorDiv.textContent = "";
+    statusDiv.textContent = "";
+    imageInput.value = "";
+}
+</script>

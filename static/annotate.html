@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Разметка парковки</title>
+
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f4f6f8;
+            color: #222;
+        }
+
+        header {
+            width: 100%;
+            padding: 18px 30px;
+            background: #1f2937;
+            color: white;
+            font-size: 22px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        #container {
+            padding: 25px;
+            max-width: 1400px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px 25px;
+            border-radius: 14px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 9px 17px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            margin-right: 10px;
+            margin-bottom: 5px;
+            transition: 0.15s;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1e4fd3;
+        }
+
+        .btn-warn {
+            background: #f59e0b;
+            color: white;
+        }
+        .btn-warn:hover {
+            background: #d98706;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        canvas {
+            border: 2px solid #d1d5db;
+            border-radius: 10px;
+            background: #fff;
+            display: block;
+            margin-top: 15px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+
+        input[type="file"] {
+            margin-bottom: 15px;
+            padding: 8px;
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    🅿 ParkingAI — Разметка парковочных мест
+</header>
+
+<div id="container">
+
+    <div class="card">
+        <h3>1. Загрузите изображение</h3>
+        <input type="file" id="imgInput" accept="image/*">
+
+        <div style="margin-top: 10px;">
+            <button class="btn btn-danger" onclick="undoSlot()">↩ Удалить последний слот</button>
+            <button class="btn btn-primary" onclick="saveToServer()">💾 Сохранить разметку</button>
+            <a href="/" class="btn btn-warn">⬅ Перейти к инференсу</a>
+        </div>
+
+        <p style="margin-top: 8px; font-size:14px; color:#555;">
+            ЛКМ — ставить точки (4 клика = слот)<br>
+            Средняя кнопка — очистить текущие точки<br>
+            Координатные линии помогают точной разметке
+        </p>
+    </div>
+
+    <div class="card">
+        <h3>2. Разметка</h3>
+        <canvas id="canvas" width="1280" height="720"></canvas>
+    </div>
+
+</div>
+
+
+<!-- SCRIPT LOGIC -->
+<script>
+const TARGET_WIDTH = 1280;
+const TARGET_HEIGHT = 720;
+
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+
+let img = new Image();
+let slots = [];
+let points = [];
+let cursor = {x: 0, y: 0};
+
+
+document.getElementById("imgInput").onchange = function(e) {
+    let file = e.target.files[0];
+    let reader = new FileReader();
+
+    reader.onload = function(ev) {
+        img.onload = function() {
+
+            let tmp = document.createElement("canvas");
+            tmp.width = TARGET_WIDTH;
+            tmp.height = TARGET_HEIGHT;
+
+            let tctx = tmp.getContext("2d");
+            tctx.drawImage(img, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+            img.src = tmp.toDataURL();
+            img.onload = () => redraw();
+        };
+
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+
+canvas.addEventListener("mousedown", function(e) {
+    if (!img.src) return;
+
+    let rect = canvas.getBoundingClientRect();
+    let x = e.clientX - rect.left;
+    let y = e.clientY - rect.top;
+
+    if (e.button === 0) {
+        points.push({x, y});
+
+        if (points.length === 4) {
+            let polygon = points.map(p => [Math.round(p.x), Math.round(p.y)]);
+
+            slots.push({
+                slot_id: "S" + String(slots.length + 1).padStart(2, '0'),
+                polygon: polygon
+            });
+
+            points = [];
+        }
+        redraw();
+    }
+
+    if (e.button === 1) {
+        points = [];
+        redraw();
+    }
+});
+
+
+canvas.addEventListener("mousemove", function(e) {
+    let rect = canvas.getBoundingClientRect();
+    cursor.x = e.clientX - rect.left;
+    cursor.y = e.clientY - rect.top;
+    redraw();
+});
+
+
+function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (img.src)
+        ctx.drawImage(img, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "yellow";
+    ctx.fillStyle = "yellow";
+
+    slots.forEach(s => {
+        let pts = s.polygon;
+
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++)
+            ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.fillText(s.slot_id, pts[0][0], pts[0][1] - 7);
+    });
+
+    ctx.fillStyle = "#00ff55";
+    points.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    ctx.strokeStyle = "rgba(80,80,80,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(cursor.x, 0);
+    ctx.lineTo(cursor.x, TARGET_HEIGHT);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, cursor.y);
+    ctx.lineTo(TARGET_WIDTH, cursor.y);
+    ctx.stroke();
+}
+
+
+function undoSlot() {
+    if (slots.length > 0) {
+        slots.pop();
+        redraw();
+    }
+}
+
+
+function saveToServer() {
+    if (!img.src) {
+        alert("Сначала загрузите изображение!");
+        return;
+    }
+
+    let data = {
+        image_size: [TARGET_WIDTH, TARGET_HEIGHT],
+        slots: slots
+    };
+
+    fetch("/save-slots", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(() => alert("Разметка успешно сохранена!"))
+    .catch(() => alert("Ошибка сохранения"));
+}
+</script>
+
+</body>
+</html>
